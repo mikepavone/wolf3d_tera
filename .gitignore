@@ -6,3 +6,5 @@ music
 sounds
 WOLFSRC/*.SYM
 WOLFSRC/WOLF3D.DSK
+*.z80
+*.list

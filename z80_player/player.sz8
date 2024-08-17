@@ -1,0 +1,425 @@
+YM_CTRL_1 equ $4000
+YM_DATA equ $4001
+YM_CTRL_2 equ $4002
+
+YM_REG_TIMERA equ $24
+YM_REG_TIMERA_LO equ $25
+YM_REG_TIMECTRL equ $27
+YM_REG_KEYON equ $28
+YM_REG_DAC equ $2A
+YM_REG_DACEN equ $2B
+
+SAMPLE_BUF equ $3E00
+SAMPLE_END equ $4000
+
+	macro note,fnum,block
+	db (\block <<3 ) | (\fnum >> 8), \fnum & $FF
+	endm
+
+	macro octave,oct
+	note 644,\oct
+	note 682,\oct
+	note 723,\oct
+	note 766,\oct
+	note 811,\oct
+	note 859,\oct
+	note 910,\oct
+	note 965,\oct
+	note 1022,\oct
+	note 1083,\oct
+	note 1147,\oct
+	note 1215,\oct
+	endm
+
+	
+	jp start
+dacen:
+	db $00
+sample_pos:
+	dw SAMPLE_BUF
+inst_table
+	dw $0000
+stream_start:
+	dw cmd_stream
+stream_end:
+	dw end
+loop:
+	exx
+timer_wait
+	ld a, (hl)          ;7, 15
+	rra                 ;4, 19
+	jr nc, timer_wait  ;7/12, 26/31
+	ld (hl), $27        ;10, 36
+ch3_mode_timer:
+	ld a, $1F           ;7, 43
+	ld (de), a          ;7, 50
+	ld a, (bc)          ;7, 47
+	ld (hl), $2A        ;10, 57
+	inc bc              ;6, 63
+	ld (de), a          ;7, 70
+	
+	ld a, c
+	or c
+	jr nz, cmd_tick
+	ld a, SAMPLE_END >> 8
+	cp b
+	jr nz, cmd_tick
+	ld b, SAMPLE_BUF >> 8
+cmd_tick:
+	exx
+	dec bc
+	ld a, b
+	or c
+	jp nz, no_cmd
+	ld d, (hl)
+	inc hl
+	ld a, $F0
+	and d
+	ld (cmd_jmp+1), a
+	
+cmd_jmp
+	jp cmd_table
+freq_table:
+	octave 0
+	octave 1
+	octave 2
+	octave 3
+	octave 4
+	octave 5
+	octave 6
+	octave 7
+	align 8
+cmd_table:
+	xor a
+	inc d
+.add_loop
+	add a, 11
+	dec d
+	jr nz, .add_loop
+	ld c, a
+	jp has_delay
+	align 4
+wait_long:
+	ld e, (hl)  ;1
+	inc hl      ;1, 2
+	ld a,$B0    ;2, 4
+	add e       ;1, 5
+	ld c, a      ;1, 6
+	adc d        ;1, 7
+	sub c        ;1, 8
+	sub $10      ;2, 10
+	ld b, a      ;1, 11
+	jp has_delay ;3, 14
+	align 4
+reg2X
+	ld e, (hl)   ;1
+	inc hl       ;1, 2
+	ld a, YM_REG_TIMECTRL ;2, 4
+	cp d         ;1, 5
+	jr z, set_timectrl ;2, 7
+	ld (ix+0), d ;3, 10
+	ld (ix+1), e ;3, 13
+	jp cmd_end   ;3, 16
+	align 4
+reg3X
+	ld (ix+0), d ;3
+	ld e, (hl)   ;1, 4
+	inc hl       ;1, 5
+	ld (ix+1), e ;3, 8
+	jp cmd_end   ;3, 11
+set_timectrl:
+	ld a, e      ;1, 12
+	jp set_timectrl2 ;3, 15
+	align 4
+reg4X
+	ld (ix+0), d
+	ld e, (hl)
+	inc hl
+	ld (ix+1), e
+reg4x_end:
+	jp cmd_end
+set_timectrl2:
+	ld (ch3_mode_timer + 1), a; 3, 14
+	jr reg4x_end              ; 2, 16
+	align 4
+reg5X
+	ld (ix+0), d
+	ld e, (hl)
+	inc hl
+	ld (ix+1), e
+	jp cmd_end
+	align 4
+reg6X
+	ld (ix+0), d
+	ld e, (hl)
+	inc hl
+	ld (ix+1), e
+	jp cmd_end
+	align 4
+reg7X
+	ld (ix+0), d
+	ld e, (hl)
+	inc hl
+	ld (ix+1), e
+	jp cmd_end
+	align 4
+reg8X
+	ld (ix+0), d
+	ld e, (hl)
+	inc hl
+	ld (ix+1), e
+	jp cmd_end
+	align 4
+reg9X
+	ld (ix+0), d
+	ld e, (hl)
+	inc hl
+	ld (ix+1), e
+	jp cmd_end
+	align 4
+regAX
+	ld (ix+0), d
+	ld e, (hl)
+	inc hl
+	ld (ix+1), e
+	jp cmd_end
+	align 4
+regBX
+	ld (ix+0), d
+	ld e, (hl)
+	inc hl
+	ld (ix+1), e
+	jp cmd_end
+	align 4
+key_on: ;C
+	ld a, $7      ;2
+	and d         ;1, 3
+	bit 3,d        ;2, 5
+	jp nz, ch3_sp_keyon ;3 8
+	ld d, a       ;1, 9
+	rra           ;1, 10
+	and $2        ;2, 12
+	jp key_on_cnt ;3, 15
+
+	align 4
+key_off: ;D
+	ld a, $7     ;2
+	and d        ;1, 3
+	bit 3,d
+	jp nz, ch3_sp_keyoff
+	exx       ;1, 4
+	ld (hl), YM_REG_KEYON ;2, 6
+	ld (de), a;1, 7
+	exx       ;1, 8
+	jp cmd_end;3, 11
+	align 4
+set_part: ;E
+	ld a, 3
+	and d
+	ld ixl, a
+	jp cmd_end
+	align 4
+set_inst: ;F
+	ld a, 4
+	and d
+	rra
+	ld ixl, a
+	ld a, (hl)
+	rrca
+	rrca
+	rrca
+	ld b, a
+	and a, $E0
+	ld c, a
+	ld a, $1F
+	and b
+	ld b, a
+	ld a, (inst_table)
+	add a, c
+	ld c, a
+	ld a, (inst_table+1)
+	adc b
+	ld b, a
+	ld a, 3
+	and d
+	add a, $30
+	ld e, 28
+.op_loop
+	ld (ix+0), a ;19
+	ex af, af'
+	ld a, (bc)
+	ld (ix+1), a
+	inc bc       ;6
+	ex af, af'   ;4, 10
+	add a, $4    ;7, 17
+	dec e        ;4, 21
+	jr nz, .op_loop ;7, 28
+	;feedback/alg
+	add a, $10
+	ld (ix+0), a
+	ex af, af'
+	ld a, (bc)
+	ld (ix+1), a
+	inc bc
+	ex af, af'
+	;pan pms/ams
+	add a, $4
+	inc hl
+	ld (ix+0), a
+	ld a, (bc)
+	ld (ix+1), a
+cmd_end
+	ld bc, 1
+has_delay
+	ld a, (stream_end)
+	cp l
+	jp nz, loop
+	ld a, (stream_end+1)
+	cp h
+	jp nz, loop
+	ld hl, (stream_start)
+	jp loop
+ch3_sp_keyoff:
+	rrca
+	sra a
+	rra
+	rra
+	cpl
+	ld DE, $F002
+	and d
+	ld d, a
+	ld a, (ch3_sp_state)
+	and d
+	ld (ch3_sp_state), a
+	or e
+	exx       ;1, 4
+	ld (hl), YM_REG_KEYON ;2, 6
+	ld (de), a;1, 7
+	exx       ;1, 8
+	jp cmd_end;3, 11
+ch3_sp_keyon:
+	rrca
+	sra a
+	rra
+	rra
+	ld iyl, a
+	ld ixl, 0
+	ld de, ch3_freq
+	ld bc, freq_table
+	ld a, (hl)
+	add a, c
+	ld c, a
+	adc a, b
+	sub c
+	ld b, a
+	ld iyh,4
+	ld a, iyl
+.loop1
+	rlca
+	jr nc, .next1
+	ex af,af'
+	ld a, (de)
+	ld (ix+0), a
+	ld a, (bc)
+	ld (ix+1), a
+	ex af,af'
+.next1
+	inc de
+	dec iyh
+	jp nz, .loop1
+	inc bc
+	ld a, iyl
+	ld iyh, 4
+.loop2
+	rlca
+	jr nc, .next2
+	ex af,af'
+	ld a, (de)
+	ld (ix+0), a
+	ld a, (bc)
+	ld (ix+1), a
+	ex af,af'
+.next2
+	inc de
+	dec iyh
+	jp nz, .loop2
+	ld a, (ch3_sp_state)
+	or iyl
+	ld (ch3_sp_state), a
+	inc hl
+	add a, 2
+	exx          ;4, 21
+	ld (hl), YM_REG_KEYON
+	ld (de), a
+	exx
+	jp cmd_end
+ch3_freq:
+	db $A6, $AC, $AE, $AD
+	db $A2, $A8, $AA, $A9
+ch3_sp_state:
+	db $00
+key_on_cnt:
+	ld ixl, a     ;2, 9
+	ld a, 3       ;2, 11
+	and d         ;1, 13
+	add a, $A4    ;2
+	ld (ix+0), a  ;3, 5
+	ld e, a
+	ld bc, freq_table
+	ld a, (hl)
+	add a, c
+	ld c, a
+	adc a, b
+	sub c
+	ld b, a
+	ld a, (bc)
+	ld (ix+1), a
+	inc bc       ;6
+	ld a, -4     ;7, 13
+	add a, e     ;4, 17
+	ld (ix+0), a ;19, 36
+	ld a, (bc)
+	ld (ix+1), a
+	inc hl       ;6
+	ld a, $F0    ;7, 13
+	or d         ;4, 17
+	exx          ;4, 21
+	ld (hl), YM_REG_KEYON
+	ld (de), a
+	exx
+	jp cmd_end
+no_cmd:
+	exx
+	ld (hl), YM_REG_DACEN
+	ld a, (dacen)
+	ld (de), a
+	ld (sample_pos), bc
+	jp timer_wait
+start:
+	di
+	ld hl, YM_CTRL_1
+	ld de, YM_DATA
+	ld (hl), YM_REG_TIMERA
+	ld a, $FE
+	ld (de), a
+	nop
+	ld (hl), YM_REG_TIMERA_LO
+	ld a, 1
+	ld (de), a
+	nop
+	ld (hl), YM_REG_TIMECTRL
+	ld a, $1F
+	ld (de), a
+	nop
+	ld (hl), YM_REG_DACEN
+	ld a, (dacen)
+	ld (de), a
+	ld bc, SAMPLE_BUF
+	exx
+	ld bc, 1
+	ld hl, (stream_start)	
+	ld ix, YM_CTRL_1
+	jp loop
+cmd_stream:
+	db $0F ;short delay command
+end:
