@@ -69,6 +69,7 @@ extern	void interrupt	SDL_t0ExtremeAsmService(void),
 	boolean		SoundSourcePresent,
 				AdLibPresent,
 				SoundBlasterPresent,SBProPresent,
+				TeradrivePresent,
 				NeedsDigitized,NeedsMusic,
 				SoundPositioned;
 	SDMode		SoundMode;
@@ -129,6 +130,10 @@ static	volatile longword		sbNextSegLen;
 static	volatile SampledSound	huge *sbSamples;
 static	void interrupt			(*sbOldIntHand)(void);
 static	byte					sbpOldFMMix,sbpOldVOCMix;
+
+// Teradrive variables
+static byte tdOrigState[4];
+static byte _seg *tdWindow;
 
 //	SoundSource variables
 		boolean				ssNoCheck;
@@ -620,6 +625,79 @@ SDL_ShutSB(void)
 	}
 
 	setvect(sbIntVec,sbOldIntHand);		// Set vector back
+}
+
+// Teradrive Code
+
+///////////////////////////////////////////////////////////////////////////
+//
+//	SDL_DetectTeradrive - Checks to see if the system is a Teradrive.
+//
+///////////////////////////////////////////////////////////////////////////
+static boolean
+SDL_DetectTeradrive(void)
+{
+	static const TeraTmss tmss = {
+		0, "PRODUCED BY OR UNDER LICENSE FROM SEGA ENTERPRISES Ltd."
+	};
+	byte orig1160, windowBase;
+	if (inportb(0x1161) != 0xFF) {
+		return(false);
+	}
+	windowBase = inportb(0x1162);
+	if ((windowBase & 0xE1) != 0xC0) {
+		return(false);
+	}
+	tdWindow = windowBase << 8;
+	orig1160 = inportb(0x1160);
+	tdOrigState[0] = inportb(0x1163);
+	outportb(0x1160, 0x21);
+	outportb(0x1163, (tdOrigState[0] & 0xFC) | 1);
+	if (tdWindow[0x1100] != 'S' || tdWindow[0x1101] != 'E' ||
+		tdWindow[0x1102] != 'G' || tdWindow[0x1103] != 'A') {
+		outportb(0x1160, orig1160);
+		return (false);
+	}
+	tdOrigState[1] = inportb(0x1164);
+	tdOrigState[2] = inportb(0x1166);
+	tdOrigState[3] = inportb(0x1167);
+	if (inportb(0x1165) & 0x20) {
+		outportb(0x1160, orig1160);
+		// MD hardware already unlocked
+		return (true);
+	}
+
+	outportb(0x1166, 0);
+	outportb(0x1167, 0);
+	outportb(0x1164, 0x81);
+asm mov ax, 0xFFFF
+wait:
+asm dec ax
+asm jnz wait
+	outportb(0x1160, orig1160);
+	if (inportb(0x1165) & 0x20) {
+		return (true);
+	}
+	outportb(0x1163, tdOrigState[0]);
+	outportb(0x1164, tdOrigState[1]);
+	outportb(0x1166, tdOrigState[2]);
+	outportb(0x1167, tdOrigState[3]);
+	return (false);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//
+//	SDL_ShutTeradrive() - Returns Teradrive regs to original state
+//
+///////////////////////////////////////////////////////////////////////////
+static void
+SDL_ShutTeradrive(void)
+{
+	//TODO: reset Z80, lock hardware if it was locked at startup
+	outportb(0x1163, tdOrigState[0]);
+	outportb(0x1164, tdOrigState[1]);
+	outportb(0x1166, tdOrigState[2]);
+	outportb(0x1167, tdOrigState[3]);
 }
 
 //	Sound Source Code
@@ -1991,6 +2069,8 @@ SD_Startup(void)
 		}
 	}
 
+	TeradrivePresent = SDL_DetectTeradrive();
+
 	for (i = 0;i < 255;i++)
 		pcSoundLookup[i] = i * 60;
 
@@ -2072,6 +2152,9 @@ SD_Shutdown(void)
 
 	if (SoundBlasterPresent)
 		SDL_ShutSB();
+
+	if (TeradrivePresent)
+		SDL_ShutTeradrive();
 
 	if (SoundSourcePresent)
 		SDL_ShutSS();

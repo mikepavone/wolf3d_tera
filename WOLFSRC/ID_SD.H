@@ -21,7 +21,7 @@ typedef	enum	{
 					sdm_PC,sdm_AdLib,
 				}	SDMode;
 typedef	enum	{
-					smm_Off,smm_AdLib
+					smm_Off,smm_AdLib,smm_Teradrive
 				}	SMMode;
 typedef	enum	{
 					sds_Off,sds_PC,sds_SoundSource,sds_SoundBlaster
@@ -31,6 +31,11 @@ typedef	struct
 			longword	length;
 			word		priority;
 		} SoundCommon;
+typedef struct
+		{
+			word        forceAlign;
+			char        text[56];
+		} TeraTmss;
 
 //	PC Sound stuff
 #define	pcTimer		0x42
@@ -190,6 +195,7 @@ typedef	struct
 extern	boolean		AdLibPresent,
 					SoundSourcePresent,
 					SoundBlasterPresent,
+					TeradrivePresent,
 					NeedsMusic,					// For Caching Mgr
 					SoundPositioned;
 extern	SDMode		SoundMode;
