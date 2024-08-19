@@ -1023,6 +1023,7 @@ void StopMusic(void)
 void StartMusic(void)
 {
 	musicnames	chunk;
+	unsigned base = MusicMode == smm_Teradrive ? STARTTERAMUSIC : STARTMUSIC;
 
 	SD_MusicOff();
 	chunk = songs[gamestate.mapon+gamestate.episode*10];
@@ -1031,7 +1032,7 @@ void StartMusic(void)
 //DEBUG control panel		return;
 
 	MM_BombOnError (false);
-	CA_CacheAudioChunk(STARTMUSIC + chunk);
+	CA_CacheAudioChunk(base + chunk);
 	MM_BombOnError (true);
 	if (mmerror)
 		mmerror = false;

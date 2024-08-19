@@ -57,7 +57,7 @@ int			mapon;
 
 unsigned	_seg	*mapsegs[MAPPLANES];
 maptype		_seg	*mapheaderseg[NUMMAPS];
-byte		_seg	*audiosegs[NUMSNDCHUNKS];
+byte		_seg	*audiosegs[STARTTERAMUSIC];
 void		_seg	*grsegs[NUMCHUNKS];
 
 byte		far	grneeded[NUMCHUNKS];
@@ -1134,15 +1134,18 @@ void CA_Shutdown (void)
 void CA_CacheAudioChunk (int chunk)
 {
 	long	pos,compressed;
+	int segChunk = chunk;
 #ifdef AUDIOHEADERLINKED
 	long	expanded;
 	memptr	bigbufferseg;
 	byte	far *source;
 #endif
+	if (chunk >= STARTTERAMUSIC)
+		segChunk = chunk - (STARTTERAMUSIC - STARTMUSIC);
 
-	if (audiosegs[chunk])
+	if (audiosegs[segChunk])
 	{
-		MM_SetPurge (&(memptr)audiosegs[chunk],0);
+		MM_SetPurge (&(memptr)audiosegs[segChunk],0);
 		return;							// allready in memory
 	}
 
@@ -1152,16 +1155,19 @@ void CA_CacheAudioChunk (int chunk)
 //
 	pos = audiostarts[chunk];
 	compressed = audiostarts[chunk+1]-pos;
+	if (chunk >= STARTTERAMUSIC) {
+		CA_WriteFile("ASDEBUG.BIN", audiostarts + chunk, 8);
+	}
 
 	lseek(audiohandle,pos,SEEK_SET);
 
 #ifndef AUDIOHEADERLINKED
 
-	MM_GetPtr (&(memptr)audiosegs[chunk],compressed);
+	MM_GetPtr (&(memptr)audiosegs[segChunk],compressed);
 	if (mmerror)
 		return;
 
-	CA_FarRead(audiohandle,audiosegs[chunk],compressed);
+	CA_FarRead(audiohandle,audiosegs[segChunk],compressed);
 
 #else
 
@@ -1182,10 +1188,10 @@ void CA_CacheAudioChunk (int chunk)
 
 	expanded = *(long far *)source;
 	source += 4;			// skip over length
-	MM_GetPtr (&(memptr)audiosegs[chunk],expanded);
+	MM_GetPtr (&(memptr)audiosegs[segChunk],expanded);
 	if (mmerror)
 		goto done;
-	CAL_HuffExpand (source,audiosegs[chunk],expanded,audiohuffman,false);
+	CAL_HuffExpand (source,audiosegs[segChunk],expanded,audiohuffman,false);
 
 done:
 	if (compressed>BUFFERSIZE)
@@ -1626,7 +1632,7 @@ void CA_SetAllPurge (void)
 //
 // free sounds
 //
-	for (i=0;i<NUMSNDCHUNKS;i++)
+	for (i=0;i<STARTTERAMUSIC;i++)
 		if (audiosegs[i])
 			MM_SetPurge (&(memptr)audiosegs[i],3);
 

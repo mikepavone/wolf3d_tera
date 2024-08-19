@@ -2944,6 +2944,9 @@ void IntroScreen(void)
 
 	if (AdLibPresent && !SoundBlasterPresent)
 		VWB_Bar(164,128,12,2,FILLCOLOR);
+		
+	if (TeradrivePresent)
+		VWB_Bar(164,139,12,2,FILLCOLOR);
 
 	if (SoundBlasterPresent)
 		VWB_Bar(164,151,12,2,FILLCOLOR);
@@ -3766,6 +3769,7 @@ static	int	lastmusic;
 void StartCPMusic(int song)
 {
 	musicnames	chunk;
+	word base = MusicMode == smm_Teradrive ? STARTTERAMUSIC : STARTMUSIC;
 
 	if (audiosegs[STARTMUSIC + lastmusic])	// JDC
 		MM_FreePtr ((memptr *)&audiosegs[STARTMUSIC + lastmusic]);
@@ -3775,7 +3779,7 @@ void StartCPMusic(int song)
 	chunk =	song;
 
 	MM_BombOnError (false);
-	CA_CacheAudioChunk(STARTMUSIC + chunk);
+	CA_CacheAudioChunk(base + chunk);
 	MM_BombOnError (true);
 	if (mmerror)
 		mmerror = false;

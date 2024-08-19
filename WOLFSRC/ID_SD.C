@@ -133,7 +133,8 @@ static	byte					sbpOldFMMix,sbpOldVOCMix;
 
 // Teradrive variables
 static byte tdOrigState[4];
-static byte _seg *tdWindow;
+static volatile byte _seg *tdWindow;
+static word tdDriverSize;
 
 //	SoundSource variables
 		boolean				ssNoCheck;
@@ -637,7 +638,7 @@ SDL_ShutSB(void)
 static boolean
 SDL_DetectTeradrive(void)
 {
-	static const TeraTmss tmss = {
+	static const far TeraTmss tmss = {
 		0, "PRODUCED BY OR UNDER LICENSE FROM SEGA ENTERPRISES Ltd."
 	};
 	byte orig1160, windowBase;
@@ -648,11 +649,11 @@ SDL_DetectTeradrive(void)
 	if ((windowBase & 0xE1) != 0xC0) {
 		return(false);
 	}
-	tdWindow = windowBase << 8;
+	tdWindow = (byte _seg *)(windowBase << 8);
 	orig1160 = inportb(0x1160);
 	tdOrigState[0] = inportb(0x1163);
 	outportb(0x1160, 0x21);
-	outportb(0x1163, (tdOrigState[0] & 0xFC) | 1);
+	outportb(0x1163, 1);
 	if (tdWindow[0x1100] != 'S' || tdWindow[0x1101] != 'E' ||
 		tdWindow[0x1102] != 'G' || tdWindow[0x1103] != 'A') {
 		outportb(0x1160, orig1160);
@@ -667,11 +668,12 @@ SDL_DetectTeradrive(void)
 		return (true);
 	}
 
-	outportb(0x1166, 0);
+	outportb(0x1166, FP_SEG(tmss.text) >> 8);
 	outportb(0x1167, 0);
 	outportb(0x1164, 0x81);
 asm mov ax, 0xFFFF
 wait:
+asm nop
 asm dec ax
 asm jnz wait
 	outportb(0x1160, orig1160);
@@ -683,6 +685,77 @@ asm jnz wait
 	outportb(0x1166, tdOrigState[2]);
 	outportb(0x1167, tdOrigState[3]);
 	return (false);
+}
+
+static int 
+SDL_read(int handle, byte far *dest, word length)
+{
+asm		push	ds
+asm		mov	bx,[handle]
+asm		mov	cx,[WORD PTR length]
+asm		mov	dx,[WORD PTR dest]
+asm		mov	ds,[WORD PTR dest+2]
+asm		mov	ah,0x3f				// READ w/handle
+asm		int	21h
+asm		pop	ds
+asm		jnc	good
+asm		mov ax,-1
+good:
+	return _AX;
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//
+//	SDL_StartTeradrive() - Loads Z80 music/sample player
+//
+///////////////////////////////////////////////////////////////////////////
+static boolean
+SDL_StartTeradrive(void)
+{
+	int handle, counter, bytes;
+	volatile word _seg *windowW = (volatile word _seg *)tdWindow;
+	
+	outportb(0x1163, 3);
+	outportb(0x1166, 0x00);
+	outportb(0x1167, 0x0C);
+	windowW[2] = 0x0481;
+	windowW[2] = 0x00C0;
+	windowW[2] = 0x0000;
+	windowW[0] = 0x0E00;
+	windowW[2] = 0x0087;
+
+	if ((handle = open("PLAYER.Z80", O_RDONLY | O_BINARY)) == -1)
+		return (false);
+
+	outportb(0x1166, 0x10);
+	outportb(0x1167, 0x0A);
+	tdWindow[0x1100] = 1;
+	tdWindow[0x1200] = 1;
+	counter = 100;
+	while ((tdWindow[0x1100] & 1) && --counter)
+	{
+asm nop
+	}
+
+	outportb(0x1166, 0x00);
+	bytes = SDL_read(handle, MK_FP(tdWindow, 0), 0x2000);
+	close(handle);
+
+	if (bytes <= 0)
+		return (false);
+
+	tdDriverSize = bytes - 1;
+	outportb(0x1166, 0x10);
+	tdWindow[0x1200] = 0;
+	tdWindow[0x1100] = 0;
+asm nop
+asm nop
+asm nop
+asm nop
+	tdWindow[0x1200] = 1;
+	
+	return (true);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -698,6 +771,70 @@ SDL_ShutTeradrive(void)
 	outportb(0x1164, tdOrigState[1]);
 	outportb(0x1166, tdOrigState[2]);
 	outportb(0x1167, tdOrigState[3]);
+}
+
+static void
+SDL_LoadMusicTera(word length, TeraMusic far *music)
+{
+	volatile word _seg *windowW = (volatile word _seg *)tdWindow;
+	int counter;
+	word offset,src,streamOffset;
+	outportb(0x1166, 0x00);
+	outportb(0x1167, 0x0C);
+	windowW[2] = 0x00C0;
+	windowW[2] = 0x0000;
+	windowW[0] = 0x000E;
+	
+	outportb(0x1166, 0x10);
+	outportb(0x1167, 0x0A);
+	tdWindow[0x1100] = 1;
+	counter = 100;
+	while ((tdWindow[0x1100] & 1) && --counter)
+	{
+asm nop
+	}
+	CA_WriteFile("TMDEBUG1.BIN", music, length);
+	--length;
+	
+	outportb(0x1166, 0x00);
+	for (offset = tdDriverSize, src = 0; offset < 0x2000 && length; length--)
+		tdWindow[offset++] = music->data[src++];
+		
+	streamOffset = tdDriverSize + music->numInstruments * 32;
+	tdWindow[6] = tdDriverSize;
+	tdWindow[7] = tdDriverSize >> 8;
+	tdWindow[8] = streamOffset;
+	tdWindow[9] = streamOffset >> 8;
+	streamOffset = offset + length;
+	tdWindow[10] = streamOffset;
+	tdWindow[11] = streamOffset >> 8;
+	CA_WriteFile("TMDEBUG2.BIN", tdWindow, offset);
+	
+	if (length)
+	{
+		outportb(0x1166, 0x02);
+		for (offset = 0; offset < 0x2000 && length; length--)
+			tdWindow[offset++] = music->data[src++];
+	}
+	outportb(0x1166, 0x10);
+	tdWindow[0x1200] = 0;
+	tdWindow[0x1100] = 0;
+asm nop
+asm nop
+asm nop
+asm nop
+asm nop
+asm nop
+asm nop
+asm nop
+asm nop
+asm nop
+	tdWindow[0x1200] = 1;
+	outportb(0x1166, 0x00);
+	outportb(0x1167, 0x0C);
+	windowW[2] = 0x00C0;
+	windowW[2] = 0x0000;
+	windowW[0] = 0xE000;
 }
 
 //	Sound Source Code
@@ -1926,6 +2063,13 @@ SD_SetMusicMode(SMMode mode)
 			result = true;
 		}
 		break;
+	case smm_Teradrive:
+		if (TeradrivePresent)
+		{
+			NeedsMusic = true;
+			result = true;
+		}
+		break;
 	}
 
 	if (result)
@@ -2070,6 +2214,12 @@ SD_Startup(void)
 	}
 
 	TeradrivePresent = SDL_DetectTeradrive();
+	if (TeradrivePresent)
+		if (!SDL_StartTeradrive())
+		{
+			SDL_ShutTeradrive();
+			TeradrivePresent = false;
+		}
 
 	for (i = 0;i < 255;i++)
 		pcSoundLookup[i] = i * 60;
@@ -2119,14 +2269,19 @@ SD_Default(boolean gotit,SDMode sd,SMMode sm)
 	{
 		switch (sm)
 		{
-		case sdm_AdLib:
+		case smm_AdLib:
 			gotsm = AdLibPresent;
+			break;
+		case smm_Teradrive:
+			gotsm = TeradrivePresent;
 			break;
 		}
 	}
 	if (!gotsm)
 	{
-		if (AdLibPresent)
+		if (TeradrivePresent)
+			sm = smm_Teradrive;
+		else if (AdLibPresent)
 			sm = smm_AdLib;
 	}
 	if (sm != MusicMode)
@@ -2403,6 +2558,8 @@ asm	cli
 		alTimeCount = 0;
 		SD_MusicOn();
 	}
+	else if (MusicMode == smm_Teradrive)
+		SDL_LoadMusicTera(music->length, (TeraMusic far *)music->values);
 
 asm	popf
 }

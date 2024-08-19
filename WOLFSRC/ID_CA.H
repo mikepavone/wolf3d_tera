@@ -25,7 +25,7 @@ extern	int			mapon;
 
 extern	unsigned	_seg	*mapsegs[MAPPLANES];
 extern	maptype		_seg	*mapheaderseg[NUMMAPS];
-extern	byte		_seg	*audiosegs[NUMSNDCHUNKS];
+extern	byte		_seg	*audiosegs[STARTTERAMUSIC];
 extern	void		_seg	*grsegs[NUMCHUNKS];
 
 extern	byte		far	grneeded[NUMCHUNKS];

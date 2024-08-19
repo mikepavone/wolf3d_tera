@@ -150,6 +150,11 @@ void ReadConfig(void)
 			sd = sdm_AdLib;
 			sm = smm_AdLib;
 		}
+		else if (TeradrivePresent)
+		{
+			sd = sdm_PC;
+			sm = smm_Teradrive;
+		}
 		else
 		{
 			sd = sdm_PC;
@@ -1055,7 +1060,7 @@ void DoJukebox(void)
 
 
 	IN_ClearKeysDown();
-	if (!AdLibPresent && !SoundBlasterPresent)
+	if (!AdLibPresent && !SoundBlasterPresent && !TeradrivePresent)
 		return;
 
 

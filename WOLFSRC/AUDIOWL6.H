@@ -6,7 +6,7 @@
 /////////////////////////////////////////////////
 
 #define NUMSOUNDS		87
-#define NUMSNDCHUNKS		288
+#define NUMSNDCHUNKS		315
 
 //
 // Sound names & indexes
@@ -109,6 +109,7 @@ typedef enum {
 #define STARTADLIBSOUNDS	87
 #define STARTDIGISOUNDS		174
 #define STARTMUSIC		261
+#define STARTTERAMUSIC		288
 
 //
 // Music names & indexes

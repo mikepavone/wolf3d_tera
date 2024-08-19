@@ -171,6 +171,11 @@ typedef	struct
 					offsets[1];
 		} MusicGroup;
 #endif
+typedef struct
+		{
+			byte	numInstruments,
+					data[1];
+		} TeraMusic;
 
 typedef	struct
 		{
