@@ -687,23 +687,6 @@ asm jnz wait
 	return (false);
 }
 
-static int 
-SDL_read(int handle, byte far *dest, word length)
-{
-asm		push	ds
-asm		mov	bx,[handle]
-asm		mov	cx,[WORD PTR length]
-asm		mov	dx,[WORD PTR dest]
-asm		mov	ds,[WORD PTR dest+2]
-asm		mov	ah,0x3f				// READ w/handle
-asm		int	21h
-asm		pop	ds
-asm		jnc	good
-asm		mov ax,-1
-good:
-	return _AX;
-}
-
 
 ///////////////////////////////////////////////////////////////////////////
 //
@@ -713,21 +696,20 @@ good:
 static boolean
 SDL_StartTeradrive(void)
 {
-	int handle, counter, bytes;
-	volatile word _seg *windowW = (volatile word _seg *)tdWindow;
+	int handle, counter;
+	long size;
+	boolean success;
 	
-	outportb(0x1163, 3);
-	outportb(0x1166, 0x00);
-	outportb(0x1167, 0x0C);
-	windowW[2] = 0x0481;
-	windowW[2] = 0x00C0;
-	windowW[2] = 0x0000;
-	windowW[0] = 0x0E00;
-	windowW[2] = 0x0087;
-
 	if ((handle = open("PLAYER.Z80", O_RDONLY | O_BINARY)) == -1)
 		return (false);
+	
+	size = filelength(handle);
+	if (size > 0x2000) {
+		close(handle);
+		return (false);
+	}
 
+	outportb(0x1163, 3);
 	outportb(0x1166, 0x10);
 	outportb(0x1167, 0x0A);
 	tdWindow[0x1100] = 1;
@@ -739,13 +721,13 @@ asm nop
 	}
 
 	outportb(0x1166, 0x00);
-	bytes = SDL_read(handle, MK_FP(tdWindow, 0), 0x2000);
+	success = CA_FarRead(handle, MK_FP(tdWindow, 0), size);
 	close(handle);
 
-	if (bytes <= 0)
+	if (!success)
 		return (false);
 
-	tdDriverSize = bytes - 1;
+	tdDriverSize = size - 1;
 	outportb(0x1166, 0x10);
 	tdWindow[0x1200] = 0;
 	tdWindow[0x1100] = 0;
@@ -766,7 +748,15 @@ asm nop
 static void
 SDL_ShutTeradrive(void)
 {
-	//TODO: reset Z80, lock hardware if it was locked at startup
+	//Reset Z80 & YM2612
+	outportb(0x1163, 3);
+	outportb(0x1166, 0x10);
+	outportb(0x1167, 0x0A);
+	tdWindow[0x1200] = 0;
+
+	//TODO: lock hardware if it was locked at startup
+
+	//Restore register state
 	outportb(0x1163, tdOrigState[0]);
 	outportb(0x1164, tdOrigState[1]);
 	outportb(0x1166, tdOrigState[2]);
@@ -779,11 +769,6 @@ SDL_LoadMusicTera(word length, TeraMusic far *music)
 	volatile word _seg *windowW = (volatile word _seg *)tdWindow;
 	int counter;
 	word offset,src,streamOffset;
-	outportb(0x1166, 0x00);
-	outportb(0x1167, 0x0C);
-	windowW[2] = 0x00C0;
-	windowW[2] = 0x0000;
-	windowW[0] = 0x000E;
 	
 	outportb(0x1166, 0x10);
 	outportb(0x1167, 0x0A);
@@ -793,7 +778,6 @@ SDL_LoadMusicTera(word length, TeraMusic far *music)
 	{
 asm nop
 	}
-	CA_WriteFile("TMDEBUG1.BIN", music, length);
 	--length;
 	
 	outportb(0x1166, 0x00);
@@ -808,7 +792,6 @@ asm nop
 	streamOffset = offset + length;
 	tdWindow[10] = streamOffset;
 	tdWindow[11] = streamOffset >> 8;
-	CA_WriteFile("TMDEBUG2.BIN", tdWindow, offset);
 	
 	if (length)
 	{
